@@ -1,4 +1,5 @@
 import os
+import re
 import torch
 
 from transformers import (
@@ -47,7 +48,8 @@ class BailingMMInfer:
             f'{self.model_name_or_path}/talker/speech_tokenizer_v1.onnx',
         )
         self.spk_info = {
-            'luna': torch.load('data/spks/luna.pt')
+            'luna': torch.load('data/spks/luna.pt'),
+            'luna_eng': torch.load('data/spks/luna_eng.pt'),
         }
 
     def load_model_processor(self):
@@ -60,6 +62,9 @@ class BailingMMInfer:
         tokenizer = AutoTokenizer.from_pretrained(self.model_name_or_path, trust_remote_code=True)
         processor = AutoProcessor.from_pretrained(self.model_name_or_path, trust_remote_code=True)
         return model, tokenizer, processor
+
+    def contains_chinese(self, text):
+        return bool(re.search(r'[\u4e00-\u9fff]', text))
 
     def generate(self, messages, max_new_tokens=512, speaker='luna', output_audio_path=None, output_audio=False, use_whisper_encoder=False):
         text = self.processor.apply_chat_template(
@@ -104,6 +109,7 @@ class BailingMMInfer:
 
         if self.model.talker is not None and output_audio:
             thinker_reply_part = outputs.hidden_states[0][0] + outputs.hidden_states[0][-1]
+            speaker = 'luna' if self.contains_chinese(output_text) else 'luna_eng'
             spk_input = self.spk_info.get(speaker, 'luna')
             audio_tokens = self.model.talker.omni_audio_generation(output_text, thinker_reply_part=thinker_reply_part, **spk_input)
             waveform = self.audio_detokenizer.token2wav(audio_tokens, save_path=output_audio_path, **spk_input)
